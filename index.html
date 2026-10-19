@@ -1,0 +1,250 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unique Timer</title>
+<style>
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  background: #080b14;
+  font-family: Arial, sans-serif;
+  color: white;
+}
+
+.app {
+  width: 92%;
+  max-width: 400px;
+  padding: 25px 18px;
+  text-align: center;
+  background: #111a2b;
+  border: 1px solid #30415c;
+  border-radius: 24px;
+  box-shadow: 0 0 35px #00d9ff15;
+}
+
+h1 { color: #40eaff; }
+
+#timer {
+  margin: 35px 0;
+  font-size: clamp(40px, 11vw, 56px);
+  font-weight: bold;
+  font-variant-numeric: tabular-nums;
+  color: #32f5a0;
+  text-shadow: 0 0 20px currentColor;
+  white-space: nowrap;
+}
+
+.warning { color: #ffd447 !important; }
+.danger { color: #ff4567 !important; }
+.finished {
+  color: #ff4567 !important;
+  animation: flash .4s infinite alternate;
+}
+
+@keyframes flash {
+  to { opacity: .45; }
+}
+
+input {
+  width: 100%;
+  padding: 14px;
+  background: #080f1d;
+  color: white;
+  border: 1px solid #3a4d68;
+  border-radius: 10px;
+  font-size: 18px;
+  text-align: center;
+}
+
+.buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+button {
+  border: 0;
+  border-radius: 10px;
+  padding: 14px 8px;
+  font-size: 15px;
+  font-weight: bold;
+}
+
+#start { background: #32f5a0; }
+#pause { background: #ffd447; }
+#reset { background: #34445d; color: white; }
+#test { background: #34445d; color: white; }
+
+#status { margin-top: 20px; color: #b8c7dc; }
+small { color: #93a4bf; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <h1>⚡ UNIQUE TIMER</h1>
+  <small>PRECISION COUNTDOWN</small>
+
+  <p>Timer duration in seconds</p>
+  <input id="duration" type="number"
+         min="0.01" max="86400" step="0.01" value="10">
+
+  <div id="timer">00:10.000</div>
+
+  <div class="buttons">
+    <button id="start">▶ START</button>
+    <button id="pause">Ⅱ PAUSE</button>
+    <button id="reset">↻ RESET</button>
+    <button id="test">🔔 TEST SOUND</button>
+  </div>
+
+  <div id="status">Ready to start</div>
+</div>
+
+<script>
+const timer = document.getElementById("timer");
+const duration = document.getElementById("duration");
+const statusText = document.getElementById("status");
+
+let remaining = 10000;
+let endAt = 0;
+let running = false;
+let finished = false;
+let raf = null;
+let audio;
+
+function showTime(ms) {
+  ms = Math.max(0, ms);
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.floor(ms / 1000) % 60;
+  const millis = Math.floor(ms % 1000);
+
+  timer.textContent =
+    String(minutes).padStart(2, "0") + ":" +
+    String(seconds).padStart(2, "0") + "." +
+    String(millis).padStart(3, "0");
+
+  timer.className = "";
+  if (finished) timer.classList.add("finished");
+  else if (ms <= 3000) timer.classList.add("danger");
+  else if (ms <= 10000) timer.classList.add("warning");
+}
+
+function beep() {
+  try {
+    audio = audio || new (window.AudioContext ||
+      window.webkitAudioContext)();
+
+    if (audio.state === "suspended") audio.resume();
+
+    [880, 660, 880].forEach((frequency, i) => {
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+
+      oscillator.frequency.value = frequency;
+      gain.gain.value = 0.18;
+      oscillator.connect(gain);
+      gain.connect(audio.destination);
+
+      const start = audio.currentTime + i * 0.35;
+      oscillator.start(start);
+      oscillator.stop(start + 0.22);
+    });
+  } catch (e) {
+    statusText.textContent = "Please enable audio in your browser.";
+  }
+}
+
+function frame() {
+  if (!running) return;
+
+  remaining = Math.max(0, endAt - performance.now());
+  showTime(remaining);
+
+  if (remaining <= 0) {
+    running = false;
+    finished = true;
+    showTime(0);
+    statusText.textContent = "🔔 TIME REACHED!";
+    beep();
+    return;
+  }
+
+  raf = requestAnimationFrame(frame);
+}
+
+function start() {
+  if (running || finished) return;
+
+  if (remaining <= 0) {
+    const value = Number(duration.value);
+    if (!Number.isFinite(value) || value <= 0 || value > 86400) {
+      statusText.textContent = "Enter a duration above 0 and up to 86400 seconds.";
+      return;
+    }
+    remaining = value * 1000;
+  }
+
+  audio = audio || (window.AudioContext || window.webkitAudioContext
+    ? new (window.AudioContext || window.webkitAudioContext)()
+    : null);
+  if (audio?.state === "suspended") audio.resume();
+
+  endAt = performance.now() + remaining;
+  running = true;
+  statusText.textContent = "⏳ Timer running...";
+  raf = requestAnimationFrame(frame);
+}
+
+function pause() {
+  if (!running) return;
+  remaining = Math.max(0, endAt - performance.now());
+  running = false;
+  cancelAnimationFrame(raf);
+
+  if (remaining <= 0) {
+    remaining = 0;
+    finished = true;
+    showTime(0);
+    statusText.textContent = "🔔 TIME REACHED!";
+    beep();
+  } else {
+    showTime(remaining);
+    statusText.textContent = "⏸ Paused";
+  }
+}
+
+function reset() {
+  running = false;
+  finished = false;
+  cancelAnimationFrame(raf);
+
+  const value = Number(duration.value);
+  remaining = Number.isFinite(value) && value > 0 && value <= 86400
+    ? value * 1000 : 10000;
+
+  showTime(remaining);
+  statusText.textContent = "Ready to start";
+}
+
+document.getElementById("start").onclick = start;
+document.getElementById("pause").onclick = pause;
+document.getElementById("reset").onclick = reset;
+document.getElementById("test").onclick = beep;
+
+duration.addEventListener("change", () => {
+  if (!running && !finished) reset();
+});
+
+showTime(remaining);
+</script>
+</body>
+</html>
